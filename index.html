@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Canvas Notes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" xintegrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent body scroll */
+        }
+        .canvas-container {
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            margin-left: -125px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            bottom: 30px;
+            transition: visibility 0.5s, opacity 0.5s linear;
+            opacity: 0;
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+        }
+        .toolbar-btn {
+            @apply p-2 rounded-lg hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500;
+        }
+        .toolbar-btn.active {
+            @apply bg-blue-100 text-blue-600;
+        }
+        .color-picker-wrapper {
+            @apply flex items-center gap-1 p-1 rounded-lg border border-gray-300;
+        }
+        .color-picker-wrapper input[type="color"] {
+            -webkit-appearance: none;
+            width: 28px;
+            height: 28px;
+            border: none;
+            cursor: pointer;
+            background: none;
+            padding: 0;
+        }
+        .color-picker-wrapper input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        .color-picker-wrapper input[type="color"]::-webkit-color-swatch {
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+        #notesList::-webkit-scrollbar { width: 6px; }
+        #notesList::-webkit-scrollbar-track { background: #f1f1f1; }
+        #notesList::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        #notesList::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-72 bg-white border-r border-gray-200 p-4 flex flex-col flex-shrink-0">
+            <h1 class="text-2xl font-bold mb-2">My Canvases</h1>
+            <p class="text-xs text-gray-500 mb-4">User ID: <span id="userIdSpan"></span></p>
+            <div class="relative mb-4">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input type="search" id="searchInput" placeholder="Search canvases..." class="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button id="newNoteBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg mb-4 transition-colors shadow-sm hover:shadow-md">
+                <i class="fas fa-plus mr-2"></i>New Canvas
+            </button>
+            <div class="flex-grow overflow-y-auto pr-1" id="notesList"></div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col">
+            <div id="editor" class="flex-grow p-4 md:p-6 flex flex-col bg-gray-100 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <input id="noteTitle" class="text-3xl font-bold bg-transparent focus:outline-none w-full p-2 rounded-lg hover:bg-gray-200 focus:bg-white" placeholder="Untitled Canvas">
+                    <button id="deleteNoteBtn" class="toolbar-btn text-red-500 hover:bg-red-100 ml-4" title="Delete Canvas"><i class="fas fa-trash-alt fa-lg"></i></button>
+                </div>
+                
+                <!-- Toolbar -->
+                <div id="toolbar" class="flex items-center flex-wrap gap-3 border-b border-t bg-white p-2 rounded-lg shadow-sm mb-4">
+                     <button id="selectBtn" class="toolbar-btn" title="Select Tool"><i class="fas fa-mouse-pointer"></i></button>
+                     <button id="drawBtn" class="toolbar-btn" title="Pencil"><i class="fas fa-pencil-alt"></i></button>
+                     <div class="h-8 border-l"></div>
+                     <div class="color-picker-wrapper" title="Fill Color">
+                        <i class="fas fa-fill-drip mx-1 text-gray-600"></i>
+                        <input type="color" id="fillColorPicker" value="#3B82F6">
+                     </div>
+                     <div class="color-picker-wrapper" title="Stroke/Text Color">
+                        <i class="fas fa-palette mx-1 text-gray-600"></i>
+                        <input type="color" id="strokeColorPicker" value="#1F2937">
+                     </div>
+                     <div class="h-8 border-l"></div>
+                     <button id="addTextBtn" class="toolbar-btn" title="Add Text"><i class="fas fa-font"></i></button>
+                     <button id="addRectBtn" class="toolbar-btn" title="Add Rectangle"><i class="far fa-square"></i></button>
+                     <button id="addCircleBtn" class="toolbar-btn" title="Add Circle"><i class="far fa-circle"></i></button>
+                     <button id="addStickyNoteBtn" class="toolbar-btn" title="Add Sticky Note"><i class="far fa-sticky-note"></i></button>
+                     <div class="relative inline-block">
+                        <input type="file" id="imageUpload" class="hidden" accept="image/*">
+                        <button id="addImageBtn" class="toolbar-btn" title="Add Image"><i class="far fa-image"></i></button>
+                     </div>
+                     <div class="flex-grow"></div> <!-- Spacer -->
+                     <button id="deleteObjBtn" class="toolbar-btn text-red-500" title="Delete Selected"><i class="fas fa-trash"></i></button>
+                     <button id="clearCanvasBtn" class="toolbar-btn text-red-500" title="Clear Canvas"><i class="fas fa-eraser"></i></button>
+                </div>
+
+                <div class="flex-grow w-full h-full relative" id="canvas-wrapper">
+                     <canvas id="noteCanvas"></canvas>
+                </div>
+            </div>
+            <div id="welcomeScreen" class="flex-grow flex flex-col items-center justify-center bg-gray-100 text-center p-4">
+                 <svg class="w-24 h-24 text-gray-300 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                <h2 class="text-2xl font-semibold text-gray-500">Select a canvas or create a new one</h2>
+            </div>
+        </main>
+    </div>
+    
+    <div id="toast" class="toast"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, addDoc, query, deleteDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIGURATION ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- FIREBASE INITIALIZATION ---
+        let app, db, auth;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+            document.body.innerHTML = '<div class="text-red-500 text-center p-8">Error: Could not initialize the application. Firebase configuration might be missing or invalid.</div>';
+        }
+
+        // --- UI ELEMENTS ---
+        const ui = {
+            notesList: document.getElementById('notesList'),
+            newNoteBtn: document.getElementById('newNoteBtn'),
+            editor: document.getElementById('editor'),
+            welcomeScreen: document.getElementById('welcomeScreen'),
+            noteTitle: document.getElementById('noteTitle'),
+            canvasWrapper: document.getElementById('canvas-wrapper'),
+            canvas: document.getElementById('noteCanvas'),
+            searchInput: document.getElementById('searchInput'),
+            userIdSpan: document.getElementById('userIdSpan'),
+            deleteNoteBtn: document.getElementById('deleteNoteBtn'),
+            toolbar: document.getElementById('toolbar'),
+            selectBtn: document.getElementById('selectBtn'),
+            drawBtn: document.getElementById('drawBtn'),
+            fillColorPicker: document.getElementById('fillColorPicker'),
+            strokeColorPicker: document.getElementById('strokeColorPicker'),
+            addTextBtn: document.getElementById('addTextBtn'),
+            addRectBtn: document.getElementById('addRectBtn'),
+            addCircleBtn: document.getElementById('addCircleBtn'),
+            addStickyNoteBtn: document.getElementById('addStickyNoteBtn'),
+            addImageBtn: document.getElementById('addImageBtn'),
+            imageUpload: document.getElementById('imageUpload'),
+            deleteObjBtn: document.getElementById('deleteObjBtn'),
+            clearCanvasBtn: document.getElementById('clearCanvasBtn'),
+        };
+
+        let currentNoteId = null;
+        let userId = null;
+        let notesUnsubscribe = null;
+        let notesCache = new Map();
+        let fabricCanvas = null;
+        let saveTimeout;
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                ui.userIdSpan.textContent = userId;
+                loadNotes();
+            } else {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Error during sign-in:", error);
+                    showToast("Authentication failed. Please refresh.", "error");
+                }
+            }
+        });
+
+        // --- CORE FUNCTIONS ---
+        function loadNotes() {
+            if (!userId) return;
+            if (notesUnsubscribe) notesUnsubscribe();
+            const notesCollection = collection(db, `artifacts/${appId}/users/${userId}/notes`);
+            const q = query(notesCollection);
+            notesUnsubscribe = onSnapshot(q, (snapshot) => {
+                notesCache.clear();
+                snapshot.forEach(doc => notesCache.set(doc.id, { id: doc.id, ...doc.data() }));
+                renderNotesList();
+                if (currentNoteId && !notesCache.has(currentNoteId)) showWelcomeScreen();
+            }, (error) => console.error("Error fetching notes:", error));
+        }
+
+        function renderNotesList(filter = '') {
+            const filterLower = filter.toLowerCase();
+            const filteredNotes = Array.from(notesCache.values()).filter(note => note.title.toLowerCase().includes(filterLower));
+            filteredNotes.sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
+
+            ui.notesList.innerHTML = '';
+            if (filteredNotes.length === 0) {
+                ui.notesList.innerHTML = `<p class="text-gray-500 p-2">${filter ? 'No matches found.' : 'No canvases yet.'}</p>`;
+                return;
+            }
+            filteredNotes.forEach(note => {
+                const noteEl = document.createElement('div');
+                noteEl.className = `p-3 rounded-lg cursor-pointer hover:bg-gray-100 truncate ${note.id === currentNoteId ? 'bg-blue-100 font-semibold' : ''}`;
+                noteEl.textContent = note.title || 'Untitled Canvas';
+                noteEl.dataset.id = note.id;
+                noteEl.addEventListener('click', () => { if (currentNoteId !== note.id) displayNote(note.id); });
+                ui.notesList.appendChild(noteEl);
+            });
+        }
+
+        async function createNewNote() {
+            if (!userId) return;
+            const notesCollection = collection(db, `artifacts/${appId}/users/${userId}/notes`);
+            try {
+                const newNoteRef = await addDoc(notesCollection, {
+                    title: 'Untitled Canvas',
+                    content: JSON.stringify({ version: '5.3.1', objects: [] }),
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+                displayNote(newNoteRef.id);
+                showToast("New canvas created!");
+            } catch (error) { console.error("Error creating new note: ", error); }
+        }
+        
+        function initCanvas() {
+            if (fabricCanvas) fabricCanvas.dispose();
+            fabricCanvas = new fabric.Canvas(ui.canvas, { backgroundColor: '#fff', selection: true });
+            
+            const resizeCanvas = () => {
+                fabricCanvas.setWidth(ui.canvasWrapper.clientWidth);
+                fabricCanvas.setHeight(ui.canvasWrapper.clientHeight);
+                fabricCanvas.renderAll();
+            };
+            new ResizeObserver(resizeCanvas).observe(ui.canvasWrapper);
+            resizeCanvas();
+
+            fabricCanvas.on({
+                'object:modified': scheduleSave,
+                'object:added': scheduleSave,
+                'object:removed': scheduleSave,
+            });
+            
+            updateBrushColor();
+            ui.selectBtn.click();
+        }
+
+        function displayNote(noteId) {
+            currentNoteId = noteId;
+            const note = notesCache.get(noteId);
+            if (!note) { showWelcomeScreen(); return; }
+
+            ui.editor.classList.remove('hidden');
+            ui.welcomeScreen.classList.add('hidden');
+            
+            if (!fabricCanvas) initCanvas();
+
+            ui.noteTitle.value = note.title;
+            fabricCanvas.loadFromJSON(note.content, () => fabricCanvas.renderAll());
+            
+            renderNotesList(ui.searchInput.value);
+        }
+        
+        async function deleteCurrentNote() {
+            if (!currentNoteId || !userId || !window.confirm(`Delete "${notesCache.get(currentNoteId).title}"?`)) return;
+            const noteToDeleteId = currentNoteId;
+            showWelcomeScreen();
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/notes`, noteToDeleteId));
+                showToast("Canvas deleted successfully.");
+            } catch (error) { console.error("Error deleting note:", error); }
+        }
+
+        function showWelcomeScreen() {
+            currentNoteId = null;
+            ui.editor.classList.add('hidden');
+            ui.welcomeScreen.classList.remove('hidden');
+            if (fabricCanvas) { fabricCanvas.dispose(); fabricCanvas = null; }
+            renderNotesList(ui.searchInput.value);
+        }
+
+        function scheduleSave() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveNote, 1500);
+        }
+
+        async function saveNote() {
+            if (!currentNoteId || !userId || !fabricCanvas) return;
+            const newTitle = ui.noteTitle.value.trim() || "Untitled Canvas";
+            const newContent = JSON.stringify(fabricCanvas.toJSON());
+            const currentNoteData = notesCache.get(currentNoteId);
+            if (currentNoteData && currentNoteData.title === newTitle && currentNoteData.content === newContent) return;
+            try {
+                await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/notes`, currentNoteId), {
+                    title: newTitle, content: newContent, updatedAt: serverTimestamp()
+                });
+            } catch (error) { console.error("Error saving note: ", error); }
+        }
+
+        // --- TOOLBAR ACTIONS ---
+        function setActiveTool(activeButton) {
+            ui.toolbar.querySelectorAll('.toolbar-btn').forEach(btn => btn.classList.remove('active'));
+            activeButton.classList.add('active');
+            fabricCanvas.isDrawingMode = (activeButton === ui.drawBtn);
+        }
+
+        function updateBrushColor() {
+            if (fabricCanvas) fabricCanvas.freeDrawingBrush.color = ui.strokeColorPicker.value;
+        }
+
+        function changeObjectColor(property, color) {
+            const activeObject = fabricCanvas.getActiveObject();
+            if (!activeObject) return;
+            
+            if (activeObject.type === 'activeSelection') { // Group selection
+                activeObject.getObjects().forEach(obj => obj.set(property, color));
+            } else { // Single object
+                activeObject.set(property, color);
+            }
+
+            // Special handling for sticky notes (group of rect and text)
+            if (activeObject.type === 'group') {
+                 if (property === 'fill') { // Change background
+                    activeObject.getObjects('rect')[0].set('fill', color);
+                 }
+                 if (property === 'stroke') { // Change text color
+                    activeObject.getObjects('textbox')[0].set('fill', color);
+                 }
+            }
+            fabricCanvas.renderAll();
+            scheduleSave();
+        }
+
+        ui.selectBtn.addEventListener('click', () => setActiveTool(ui.selectBtn));
+        ui.drawBtn.addEventListener('click', () => setActiveTool(ui.drawBtn));
+        ui.fillColorPicker.addEventListener('input', () => changeObjectColor('fill', ui.fillColorPicker.value));
+        ui.strokeColorPicker.addEventListener('input', () => {
+            updateBrushColor();
+            changeObjectColor('stroke', ui.strokeColorPicker.value);
+            // Also change fill for text objects for better UX
+            const activeObject = fabricCanvas.getActiveObject();
+            if (activeObject && (activeObject.type === 'textbox' || activeObject.type === 'i-text')) {
+                 changeObjectColor('fill', ui.strokeColorPicker.value);
+            }
+        });
+
+        ui.addTextBtn.addEventListener('click', () => {
+            fabricCanvas.add(new fabric.Textbox('Type here...', {
+                left: fabricCanvas.getCenter().left - 100, top: fabricCanvas.getCenter().top - 20,
+                width: 200, fontSize: 24, fill: ui.strokeColorPicker.value, fontFamily: 'Inter'
+            })).setActiveObject(fabricCanvas.getObjects().pop());
+        });
+
+        ui.addRectBtn.addEventListener('click', () => {
+            fabricCanvas.add(new fabric.Rect({
+                left: fabricCanvas.getCenter().left - 50, top: fabricCanvas.getCenter().top - 50,
+                fill: ui.fillColorPicker.value, width: 100, height: 100,
+            }));
+        });
+
+        ui.addCircleBtn.addEventListener('click', () => {
+            fabricCanvas.add(new fabric.Circle({
+                left: fabricCanvas.getCenter().left - 50, top: fabricCanvas.getCenter().top - 50,
+                radius: 50, fill: ui.fillColorPicker.value,
+            }));
+        });
+
+        ui.addStickyNoteBtn.addEventListener('click', () => {
+            const rect = new fabric.Rect({ width: 200, height: 200, fill: '#FFF9C4', shadow: 'rgba(0,0,0,0.2) 2px 2px 5px' });
+            const text = new fabric.Textbox('Sticky Note', { width: 180, top: 10, left: 10, fontSize: 18, textAlign: 'center', fontFamily: 'Inter', fill: '#333' });
+            fabricCanvas.add(new fabric.Group([rect, text], { left: fabricCanvas.getCenter().left - 100, top: fabricCanvas.getCenter().top - 100 }));
+        });
+
+        ui.addImageBtn.addEventListener('click', () => ui.imageUpload.click());
+        ui.imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (f) => {
+                fabric.Image.fromURL(f.target.result, (img) => {
+                    img.scaleToWidth(300);
+                    img.set({ left: fabricCanvas.getCenter().left - 150, top: fabricCanvas.getCenter().top - (img.getScaledHeight() / 2) });
+                    fabricCanvas.add(img);
+                });
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        });
+
+        ui.deleteObjBtn.addEventListener('click', () => {
+            fabricCanvas.getActiveObjects().forEach(obj => fabricCanvas.remove(obj));
+            fabricCanvas.discardActiveObject().renderAll();
+        });
+        
+        ui.clearCanvasBtn.addEventListener('click', () => {
+             if (window.confirm("Are you sure you want to clear the entire canvas?")) {
+                fabricCanvas.clear();
+                fabricCanvas.backgroundColor = '#fff';
+                fabricCanvas.renderAll();
+                scheduleSave();
+            }
+        });
+
+        // --- GLOBAL EVENT LISTENERS ---
+        ui.newNoteBtn.addEventListener('click', createNewNote);
+        ui.noteTitle.addEventListener('input', scheduleSave);
+        ui.searchInput.addEventListener('input', (e) => renderNotesList(e.target.value));
+        ui.deleteNoteBtn.addEventListener('click', deleteCurrentNote);
+        
+        function showToast(message, type = "success") {
+            const toast = document.getElementById("toast");
+            toast.textContent = message;
+            toast.className = `toast show ${type === 'error' ? 'bg-red-600' : 'bg-green-500'}`;
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+    </script>
+</body>
+</html>
+```
+
+---
+
+### How to Deploy with GitHub Pages
+
+This is a great, free alternative to Netlify. It involves a few more clicks but is an excellent skill to have.
+
+**Step 1: Save the Code**
+
+1.  Copy the entire HTML code from the updated immersive document above.
+2.  Paste it into a new file in a plain text editor (like VS Code, Notepad, or TextEdit).
+3.  Save the file with the name `index.html`. This exact name is important.
+
+**Step 2: Create a GitHub Repository**
+
+1.  Go to [GitHub.com](https://github.com/) and sign in or create a free account.
+2.  In the top-right corner, click the **+** icon, then select **New repository**.
+3.  **Name your repository.** Something like `my-visual-notes` is perfect.
+4.  **Important:** Make sure the repository is set to **Public**. GitHub Pages for free accounts only works on public repositories.
+5.  You can skip adding a README, .gitignore, or license for now.
+6.  Click the **Create repository** button.
+
+**Step 3: Upload Your `index.html` File**
+
+1.  On your new repository's main page, you'll see a section to get started. Click the link that says **uploading an existing file**.
+2.  On the next screen, you can **drag and drop your `index.html` file** directly onto the page, or click "choose your files" to select it from your computer.
+3.  Once the file is uploaded, you'll see a "Commit changes" section at the bottom. You can just leave the default text.
+4.  Click the green **Commit changes** button.
+
+**Step 4: Enable GitHub Pages**
+
+1.  Now that your file is in the repository, click on the **Settings** tab near the top right of your repository's page.
+2.  In the left-hand navigation menu, click on **Pages**.
+3.  Under the "Branch" section, you will see a dropdown menu that likely says "None". Click on it and select **main** (or `master` on older repositories).
+4.  Leave the folder dropdown next to it as **/ (root)**.
+5.  Click the **Save** button.
+
+**Step 5: Access Your Live Site**
+
+1.  After you save, the page will refresh. At the top, you will see a blue or green box that says, **"Your site is live at `https://<your-username>.github.io/<your-repository-name>/`"**.
+2.  It might take a minute or two for the site to become active. If you get a 404 error, wait a couple of minutes and then refresh the page.
+3.  **This is your live URL!** You can now copy this URL and embed it into your Google Site using the **Embed by URL** option, just as we discussed with Netlify.
+
+You're all set! You now have an enhanced note-taking app with color controls and a reliable way to deploy and embed 
